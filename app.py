@@ -2,6 +2,10 @@ import os
 import re
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_cors import CORS
+from functools import wraps
 
 # Import the analysis function from our analyzer module
 from analyzer import analyze_text
@@ -23,9 +27,34 @@ def validate_text(text, field_name="text"):
 load_dotenv()
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'changeme')
 
+limiter = Limiter(
+    key_func=get_remote_address,
+    app=app,
+    default_limits=[]
+)
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    return jsonify({"error": "Rate limit exceeded. Try again later.", "code": 429}), 429
+
+def require_rapidapi_secret(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        expected_secret = os.environ.get('RAPIDAPI_SECRET')
+        provided_secret = request.headers.get('X-RapidAPI-Proxy-Secret')
+        
+        if not expected_secret or not provided_secret or provided_secret != expected_secret:
+            return jsonify({"error": "Unauthorized", "code": 401}), 401
+            
+        return f(*args, **kwargs)
+    return decorated_function
+
 @app.route('/analyze', methods=['POST'])
+@limiter.limit("10 per minute")
+@require_rapidapi_secret
 def analyze_endpoint():
     """
     Endpoint that accepts JSON payload with 'text' and returns an analysis including a learning tip.
@@ -71,6 +100,8 @@ def analyze_endpoint():
     return jsonify(response), 200
 
 @app.route('/compare', methods=['POST'])
+@limiter.limit("5 per minute")
+@require_rapidapi_secret
 def compare_endpoint():
     """
     Endpoint that accepts JSON payload with 'text1' and 'text2'

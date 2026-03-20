@@ -2,3 +2,4 @@ Flask
 flask-limiter
 textstat
 python-dotenv
+flask-cors
