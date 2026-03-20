@@ -4,3 +4,4 @@ textstat
 python-dotenv
 flask-cors
 requests
+gunicorn
