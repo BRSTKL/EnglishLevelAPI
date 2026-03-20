@@ -51,6 +51,91 @@ def analyze_endpoint():
     
     return jsonify(response), 200
 
+@app.route('/compare', methods=['POST'])
+def compare_endpoint():
+    """
+    Endpoint that accepts JSON payload with 'text1' and 'text2'
+    and returns a comparison of both texts' difficulty and CEFR levels.
+    """
+    # 1. Grab JSON data from the request
+    data = request.get_json()
+    
+    if not data or 'text1' not in data or 'text2' not in data:
+        return jsonify({"error": "Missing 'text1' or 'text2' in JSON body."}), 400
+        
+    text1 = data['text1']
+    text2 = data['text2']
+    
+    # 2. Analyze both texts using our unified logic
+    analysis1 = analyze_text(text1)
+    analysis2 = analyze_text(text2)
+    
+    # 3. Create a helper mapping for CEFR levels to calculate distance
+    cefr_map = {
+        "A1 (Beginner)": 1,
+        "A2 (Elementary)": 2,
+        "B1 (Intermediate)": 3,
+        "B2 (Upper-Intermediate)": 4,
+        "C1 (Advanced)": 5,
+        "C2 (Mastery)": 6
+    }
+    
+    cefr1 = analysis1['cefr_level']
+    cefr2 = analysis2['cefr_level']
+    
+    level1_val = cefr_map.get(cefr1, 1)
+    level2_val = cefr_map.get(cefr2, 1)
+    
+    diff = abs(level1_val - level2_val)
+    
+    # 4. Determine which text is harder and write a recommendation
+    if level1_val > level2_val:
+        harder = "text1"
+        rec = "text1 is significantly more advanced than text2" if diff > 1 else "text1 is slightly more advanced than text2"
+    elif level2_val > level1_val:
+        harder = "text2"
+        rec = "text2 is significantly more advanced than text1" if diff > 1 else "text2 is slightly more advanced than text1"
+    else:
+        # Fall back to checking grade level if CEFR is exactly the same
+        if analysis1['grade_level'] > analysis2['grade_level']:
+            harder = "text1"
+            rec = "text1 has a slightly higher reading grade than text2 despite being the same CEFR level"
+        elif analysis2['grade_level'] > analysis1['grade_level']:
+            harder = "text2"
+            rec = "text2 has a slightly higher reading grade than text1 despite being the same CEFR level"
+        else:
+            harder = "equal"
+            rec = "Both texts are at approximately the same difficulty"
+            
+    # Format the level difference using the required language
+    if diff == 0:
+        level_difference = "0 CEFR levels apart"
+    elif diff == 1:
+        level_difference = "1 CEFR level apart"
+    else:
+        level_difference = f"{diff} CEFR levels apart"
+        
+    # 5. Build the final response match layout requested by user
+    response = {
+        "text1": {
+            "cefr_level": cefr1,
+            "grade_level": analysis1['grade_level'],
+            "word_count": analysis1['total_words']
+        },
+        "text2": {
+            "cefr_level": cefr2,
+            "grade_level": analysis2['grade_level'],
+            "word_count": analysis2['total_words']
+        },
+        "comparison": {
+            "harder_text": harder,
+            "level_difference": level_difference,
+            "recommendation": rec
+        }
+    }
+    
+    return jsonify(response), 200
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
     app.run(port=port)
