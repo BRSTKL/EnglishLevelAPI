@@ -24,7 +24,14 @@ def run_tests():
     print("Starting Flask server...")
     # Start the server in the background
     server_process = subprocess.Popen([sys.executable, "app.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    time.sleep(2) # Give it a moment to start up
+    
+    # Wait until server is up
+    for _ in range(10):
+        try:
+            requests.get(f"{BASE_URL}/health")
+            break
+        except requests.exceptions.ConnectionError:
+            time.sleep(1)
 
     try:
         # Test 1 - /health
