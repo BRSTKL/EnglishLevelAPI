@@ -1,9 +1,24 @@
 import os
+import re
 from flask import Flask, request, jsonify
 from dotenv import load_dotenv
 
 # Import the analysis function from our analyzer module
 from analyzer import analyze_text
+
+def validate_text(text, field_name="text"):
+    """Validates the text input for length and content requirements."""
+    if not text or not str(text).strip():
+        return {"error": "Text cannot be empty", "code": 400}
+        
+    word_count = len(re.findall(r'\b\w+\b', str(text).lower()))
+    
+    if word_count < 10:
+        return {"error": "Text too short. Send at least 10 words.", "code": 400}
+    if word_count > 5000:
+        return {"error": "Text too long. Maximum 5000 words allowed.", "code": 400}
+        
+    return None
 
 load_dotenv()
 
@@ -19,9 +34,13 @@ def analyze_endpoint():
     data = request.get_json()
     
     if not data or 'text' not in data:
-        return jsonify({"error": "Missing 'text' key in JSON body."}), 400
+        return jsonify({"error": "Missing field: text", "code": 400}), 400
         
     text_to_analyze = data['text']
+    
+    validation_error = validate_text(text_to_analyze, "text")
+    if validation_error:
+        return jsonify(validation_error), 400
     
     # 2. Get the analysis dictionary from the analyzer
     analysis_result = analyze_text(text_to_analyze)
@@ -60,11 +79,21 @@ def compare_endpoint():
     # 1. Grab JSON data from the request
     data = request.get_json()
     
-    if not data or 'text1' not in data or 'text2' not in data:
-        return jsonify({"error": "Missing 'text1' or 'text2' in JSON body."}), 400
+    if not data or 'text1' not in data:
+        return jsonify({"error": "Missing field: text1", "code": 400}), 400
+    if 'text2' not in data:
+        return jsonify({"error": "Missing field: text2", "code": 400}), 400
         
     text1 = data['text1']
     text2 = data['text2']
+    
+    val_err1 = validate_text(text1, "text1")
+    if val_err1:
+        return jsonify(val_err1), 400
+        
+    val_err2 = validate_text(text2, "text2")
+    if val_err2:
+        return jsonify(val_err2), 400
     
     # 2. Analyze both texts using our unified logic
     analysis1 = analyze_text(text1)
@@ -135,6 +164,11 @@ def compare_endpoint():
     }
     
     return jsonify(response), 200
+
+@app.route('/health', methods=['GET'])
+def health_endpoint():
+    """Health check endpoint to verify the API is running."""
+    return jsonify({"status": "ok", "version": "1.0.0"}), 200
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
