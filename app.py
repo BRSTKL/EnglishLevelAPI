@@ -10,8 +10,10 @@ from functools import wraps
 # Import the analysis function from our analyzer module
 from analyzer import analyze_text
 
+import json
+
 # Import our brand new AI simplification feature from ai_features.py
-from ai_features import simplify_text
+from ai_features import simplify_text, client
 
 def validate_text(text, field_name="text"):
     """Validates the text input for length and content requirements."""
@@ -261,6 +263,127 @@ def simplify_endpoint():
     }
     
     # 9. Send the beautiful JSON data back to the person who requested it! (200 OK means Success)
+    return jsonify(response_data), 200
+
+@app.route('/quiz', methods=['POST'])
+@limiter.limit("2 per minute")  # We restrict users to 2 requests per minute so they don't abuse the AI limits
+@require_rapidapi_secret        # This protects our endpoint from unauthorized users
+def quiz_endpoint():
+    """
+    Endpoint that generates a reading comprehension quiz using Gemini to a specific English level.
+    """
+    # 1. Grab carefully the JSON data sent to us by the user
+    data = request.get_json()
+    
+    # 2. Add error handling: check if the 'text' field is entirely missing
+    if not data or 'text' not in data:
+        # We inform the user they missed a required field with a 400 Bad Request error.
+        return jsonify({"error": "Missing field: text", "code": 400}), 400
+        
+    text = str(data['text']).strip()
+    
+    # 3. Check if the text is long enough for a quiz
+    # We count words exactly like we did in validate_text function
+    word_count = len(re.findall(r'\b\w+\b', text.lower()))
+    if word_count < 50:
+        return jsonify({"error": "Text too short. Send at least 50 words.", "code": 400}), 400
+        
+    # We can also quickly make sure it isn't literally millions of words to prevent crashes
+    if word_count > 5000:
+        return jsonify({"error": "Text too long. Maximum 5000 words allowed.", "code": 400}), 400
+        
+    # 4. Check the number of questions the user wants. If missing, default to 5.
+    # The .get() function checks if the field exists, and if not, it automatically uses the '5' as a fallback.
+    num_questions = data.get('num_questions', 5)
+    
+    # 5. Check if the number of questions is between 3 and 10
+    try:
+        # Convert it to a strict integer number just in case they sent a string "5"
+        num_questions = int(num_questions)
+        if num_questions < 3 or num_questions > 10:
+            return jsonify({"error": "num_questions must be between 3 and 10", "code": 400}), 400
+    except ValueError:
+        return jsonify({"error": "num_questions must be a whole number between 3 and 10", "code": 400}), 400
+    
+    # 6. We quickly analyze the text mathematically to figure out its reading difficulty (CEFR level)
+    analysis = analyze_text(text)
+    # The analyzer natively returns labels like "C1 (Advanced)". We only want the "C1" prefix.
+    text_cefr_level = analysis['cefr_level'].split(" ")[0]
+    
+    # 7. We prepare exactly what we want to say to the AI.
+    # We give it a strict set of rules so it returns beautiful, consistent code (JSON) without typing extra friendly messages.
+    prompt = f"""Create {num_questions} multiple choice questions 
+from this text to test English comprehension.
+
+Return ONLY a valid JSON array, no extra text, 
+no markdown, no code blocks. Use this exact format:
+[
+  {{
+    "question": "What does the author suggest?",
+    "options": ["A) ...", "B) ...", "C) ...", "D) ..."],
+    "correct_answer": "A",
+    "explanation": "Because..."
+  }}
+]
+
+Text: {text}"""
+
+    # 8. We put the actual Gemini calling sequence into a mini-function.
+    # Why? So we can run it again later safely if it fails the very first time!
+    def generate_and_parse_quiz():
+        # Talk to Gemini
+        gemini_response = client.models.generate_content(
+            model="gemini-2.5-flash", 
+            contents=prompt,
+            config={
+                # We give it low temperature so it's predictable, strictly follows our JSON rules, and doesn't get "creative".
+                "temperature": 0.2,
+                # Quizzes take more text space to write out, so we increase the token limit to 1500.
+                "max_output_tokens": 1500,
+            }
+        )
+        
+        # We grab the raw text string returned by the artificial intelligence
+        raw_text = gemini_response.text.strip()
+        
+        # Sometimes AI adds formatting like ```json ... ``` even when told not to.
+        # This small piece of logic forcefully deletes those to leave just the pure JSON.
+        if raw_text.startswith("```json"):
+            raw_text = raw_text.replace("```json", "", 1)
+        if raw_text.startswith("```"):
+            raw_text = raw_text.replace("```", "", 1)
+        if raw_text.endswith("```"):
+            raw_text = raw_text[:-3]
+        
+        # Clean off any trailing whitespace
+        clean_json_text = raw_text.strip()
+        
+        # Finally, we use Python's built-in json tool to magically turn that text string into a beautiful Dictionary structure.
+        return json.loads(clean_json_text)
+
+    # 9. Here is where the actual logic runs with our custom Retries!
+    try:
+        # First attempt!
+        quiz_data = generate_and_parse_quiz()
+    except Exception as e:
+        print("First attempt at generating quiz failed:", e)
+        # If the first attempt crashed (e.g., Gemini didn't return perfect JSON or internet blinked),
+        # we try exactly ONE more time.
+        try:
+            quiz_data = generate_and_parse_quiz()
+        except Exception as e2:
+            print("Second attempt at generating quiz failed:", e2)
+            # If it still fails, we have to safely tell the website user that the AI is down.
+            return jsonify({"error": "AI service unavailable", "code": 503}), 503
+
+    # 10. Once it works, we structure exactly the JSON response you asked for!
+    response_data = {
+        "text_cefr_level": text_cefr_level,
+        "num_questions": len(quiz_data), # We count exactly how many the AI actually made
+        "questions": quiz_data
+    }
+    
+    # 11. We return it back to the internet as a real JSON response object (200 OK means Success)
     return jsonify(response_data), 200
 
 @app.route('/health', methods=['GET'])
