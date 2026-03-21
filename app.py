@@ -10,6 +10,9 @@ from functools import wraps
 import json
 import textstat
 
+# Import the analysis function from our analyzer module
+from analyzer import analyze_text
+
 # Import our brand new AI simplification feature from ai_features.py
 from ai_features import simplify_text, client
 
