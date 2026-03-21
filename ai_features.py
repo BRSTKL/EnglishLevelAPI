@@ -26,13 +26,13 @@ def test_gemini_connection():
     # We use a try/except block. If something crashes (like an invalid API key), 
     # the code gracefully jumps down to 'except' instead of breaking our app entirely.
     try:
-        # We ask the client to generate content using the gemini-1.5-flash-latest model,
+        # We ask the client to generate content using the gemini-2.5-flash model,
         # which is the newest and fastest version available.
         # We give it a simple instruction: "Hello"
         # Since you wanted consistent responses (temperature 0.3) and max 1000 tokens,
         # we configure that directly in the generate_content call.
         response = client.models.generate_content(
-            model="gemini-1.5-flash-latest", 
+            model="gemini-2.5-flash", 
             contents="Hello",
             config={
                 "temperature": 0.3,
