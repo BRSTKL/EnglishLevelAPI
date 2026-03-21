@@ -10,6 +10,9 @@ from functools import wraps
 # Import the analysis function from our analyzer module
 from analyzer import analyze_text
 
+# Import our brand new AI simplification feature from ai_features.py
+from ai_features import simplify_text
+
 def validate_text(text, field_name="text"):
     """Validates the text input for length and content requirements."""
     if not text or not str(text).strip():
@@ -195,6 +198,70 @@ def compare_endpoint():
     }
     
     return jsonify(response), 200
+
+@app.route('/simplify', methods=['POST'])
+@limiter.limit("5 per minute")  # We restrict users to 5 requests per minute so they don't abuse the AI
+@require_rapidapi_secret        # This protects our endpoint from unauthorized users
+def simplify_endpoint():
+    """
+    Endpoint that simplifies text using Gemini to a specific English level.
+    """
+    # 1. Grab carefully the JSON data sent to us by the user
+    data = request.get_json()
+    
+    # 2. Add error handling: check if the 'text' field is entirely missing
+    if not data or 'text' not in data:
+        # We inform the user they missed a required field with a 400 Bad Request error.
+        return jsonify({"error": "Missing field: text", "code": 400}), 400
+        
+    text = data['text']
+    
+    # 3. Add error handling: Add 'target_level' field check
+    # We use data.get() to grab it without giving an error if it doesn't exist
+    target_level = data.get('target_level')
+    
+    # 4. Add error handling: Check if target_level is allowed
+    # The user is only allowed to send these exact strings
+    valid_levels = ["A1", "A2", "B1", "B2", "C1", "C2"]
+    if target_level not in valid_levels:
+        # If it's invalid (e.g., "Z9" or missing), we block it with a 400 error.
+        return jsonify({"error": f"Invalid target_level. Must be one of: {', '.join(valid_levels)}", "code": 400}), 400
+        
+    # 5. Let's make sure the text isn't weird (empty or millions of words) using our trusty old validator
+    val_err = validate_text(text, "text")
+    if val_err:
+        return jsonify(val_err), 400
+        
+    # 6. To tell them what level it used to be, we analyze their original text in the background!
+    analysis = analyze_text(text)
+    
+    # The analyzer natively returns labels like "C1 (Advanced)".
+    # But we ONLY want the "C1" part to keep our API clean exactly how we described!
+    # By splitting at the empty space (" "), we take just the very first part: [0]
+    original_cefr_label = analysis['cefr_level']
+    original_cefr = original_cefr_label.split(" ")[0]
+    
+    # 7. Add error handling for Gemini!
+    # We use a try/except block. Connecting to an outside API (Google) is risky and could fail.
+    try:
+        # We hand off the text to our neat function inside ai_features.py
+        simplified_text = simplify_text(text, target_level)
+    except Exception as e:
+        # If Gemini fails (API quota run out, network offline, etc.), we catch it here.
+        print("Gemini API Error:", e)
+        # We respond with a 503 Service Unavailable error instead of crashing our server!
+        return jsonify({"error": "AI service unavailable", "code": 503}), 503
+        
+    # 8. Create the exact dictionary structure you expected as an answer
+    response_data = {
+        "original_text": text,
+        "simplified_text": simplified_text,
+        "target_level": target_level,
+        "original_cefr": original_cefr
+    }
+    
+    # 9. Send the beautiful JSON data back to the person who requested it! (200 OK means Success)
+    return jsonify(response_data), 200
 
 @app.route('/health', methods=['GET'])
 def health_endpoint():

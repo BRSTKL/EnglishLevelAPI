@@ -48,6 +48,34 @@ def test_gemini_connection():
         print("\nAn error occurred. Make sure you replaced 'your_gemini_api_key_here' in the .env file!")
         print("Error details:", e)
 
+def simplify_text(text, target_level):
+    """
+    Sends a request to Gemini to rewrite the text to a specific CEFR level.
+    """
+    # 1. We prepare exactly what we want to say to the AI.
+    # The 'f' inside the quotation marks lets us inject our variables '{target_level}' and '{text}' directly into the string.
+    prompt = f"""Rewrite the following text at {target_level} English level. Use simple words and short sentences.
+Keep the same meaning. Return ONLY the rewritten text, nothing else.
+
+Text: {text}"""
+    
+    # 2. We ask our Gemini client to generate the content based on our prompt.
+    response = client.models.generate_content(
+        # We use the fast and smart 2.5 model
+        model="gemini-2.5-flash",
+        # We give it our carefully written instructions
+        contents=prompt,
+        config={
+            # We keep the temperature low so we get consistent, straightforward text instead of crazy/creative variations.
+            "temperature": 0.3,
+            "max_output_tokens": 1000,
+        }
+    )
+    
+    # 3. The AI returns a bunch of data, but we only care about the actual text string it generated.
+    # .strip() removes any accidental empty spaces or newlines at the beginning or end of the text.
+    return response.text.strip()
+
 # This simply means: only run "test_gemini_connection" if we're directly running THIS specific Python file.
 # That way, when we import this file later in app.py or analyzer.py to actually build features, 
 # it doesn't randomly run a test every time.
