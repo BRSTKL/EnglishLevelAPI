@@ -7,10 +7,8 @@ from flask_limiter.util import get_remote_address
 from flask_cors import CORS
 from functools import wraps
 
-# Import the analysis function from our analyzer module
-from analyzer import analyze_text
-
 import json
+import textstat
 
 # Import our brand new AI simplification feature from ai_features.py
 from ai_features import simplify_text, client
@@ -384,6 +382,105 @@ Text: {text}"""
     }
     
     # 11. We return it back to the internet as a real JSON response object (200 OK means Success)
+    return jsonify(response_data), 200
+
+@app.route('/vocabulary', methods=['POST'])
+@limiter.limit("20 per minute") # Rate limit set to a generous 20 requests per minute
+@require_rapidapi_secret        # Same protection as our other endpoints
+def vocabulary_endpoint():
+    """
+    Endpoint that analyzes vocabulary difficulty based strictly on syllables.
+    """
+    # 1. Grab the JSON data from the request
+    data = request.get_json()
+    
+    # 2. Error handling: field must exist
+    if not data or 'text' not in data:
+        return jsonify({"error": "Missing field: text", "code": 400}), 400
+        
+    text = str(data['text']).strip()
+    
+    # 3. Use Regular Expressions (re) to grab only the words (no punctuation like commas or periods)
+    # The \b\w+\b pattern finds pure words.
+    words_list = re.findall(r'\b\w+\b', text.lower())
+    total_words = len(words_list)
+    
+    # 4. Error handling: Text length checks
+    if total_words < 10:
+        return jsonify({"error": "Text too short. Send at least 10 words.", "code": 400}), 400
+    if total_words > 1000:
+        return jsonify({"error": "Text too long. Max 1000 words.", "code": 400}), 400
+        
+    # 5. Remove duplicates using a Python 'set', which mathematically only stores unique items
+    unique_words = set(words_list)
+    
+    # 6. We prepare our empty breakdown structure
+    breakdown = {
+        "A1": [],
+        "A2": [],
+        "B1": [],
+        "B2": [],
+        "C1": []
+    }
+    
+    # 7. Loop through every single unique word and count its syllables using textstat
+    for word in unique_words:
+        syllable_count = textstat.syllable_count(word)
+        
+        # 8. Assign to CEFR level based strictly on the number of syllables
+        if syllable_count == 1:
+            breakdown["A1"].append(word)
+        elif syllable_count == 2:
+            breakdown["A2"].append(word)
+        elif syllable_count == 3:
+            breakdown["B1"].append(word)
+        elif syllable_count == 4:
+            breakdown["B2"].append(word)
+        else:
+            # 5 or more syllables goes to C1
+            breakdown["C1"].append(word)
+            
+    # 9. Calculate the Vocabulary Score
+    vocabulary_score = 100
+    
+    # Subtract points based on how many hard words exist in the unique structures
+    # len() counts the number of words inside that specific list
+    vocabulary_score -= (len(breakdown["B1"]) * 5)
+    vocabulary_score -= (len(breakdown["B2"]) * 10)
+    vocabulary_score -= (len(breakdown["C1"]) * 15)
+    
+    # Ensure the score never drops below 0 using the max() function
+    vocabulary_score = max(0, vocabulary_score)
+    
+    # 10. Find the most difficult words
+    # We look from hardest (C1) to easiest (A1). The first list that isn't empty becomes our "most difficult" list.
+    most_difficult_words = []
+    if len(breakdown["C1"]) > 0:
+        most_difficult_words = breakdown["C1"]
+    elif len(breakdown["B2"]) > 0:
+        most_difficult_words = breakdown["B2"]
+    elif len(breakdown["B1"]) > 0:
+        most_difficult_words = breakdown["B1"]
+    elif len(breakdown["A2"]) > 0:
+        most_difficult_words = breakdown["A2"]
+    else:
+        most_difficult_words = breakdown["A1"]
+        
+    # 11. Grab the general CEFR level of the entire text using our existing analyzer function
+    analysis = analyze_text(text)
+    text_cefr_level = analysis['cefr_level'].split(" ")[0]
+    
+    # 12. Structure the exact beautiful JSON response you asked for
+    response_data = {
+        "total_words": total_words,
+        "unique_words": len(unique_words),
+        "text_cefr_level": text_cefr_level,
+        "vocabulary_breakdown": breakdown,
+        "most_difficult_words": most_difficult_words,
+        "vocabulary_score": vocabulary_score
+    }
+    
+    # 13. Send the JSON response!
     return jsonify(response_data), 200
 
 @app.route('/health', methods=['GET'])
