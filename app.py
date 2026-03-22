@@ -15,7 +15,10 @@ import traceback
 from analyzer import analyze_text
 
 # Import our brand new AI simplification feature from ai_features.py
-from ai_features import simplify_text, client
+from ai_features import simplify_text
+
+# Import the Google GenAI client module directly internally for the quiz feature
+from google import genai
 
 def validate_text(text, field_name="text"):
     """Validates the text input for length and content requirements."""
@@ -334,6 +337,10 @@ Text: {text}"""
     # 8. We put the actual Gemini calling sequence into a mini-function.
     # Why? So we can run it again later safely if it fails the very first time!
     def generate_and_parse_quiz():
+        # Specifically inside the quiz function, initialize our Google AI connection safely!
+        api_key = os.getenv("GEMINI_API_KEY")
+        client = genai.Client(api_key=api_key)
+        
         # Talk to Gemini
         gemini_response = client.models.generate_content(
             model="gemini-2.5-flash", 

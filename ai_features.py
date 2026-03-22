@@ -8,13 +8,6 @@ from google import genai
 # We call this to actually load those variables from .env into our system environment.
 load_dotenv()
 
-# We retrieve the GEMINI_API_KEY from the system.
-# This must match what is in your .env file exactly.
-api_key = os.getenv("GEMINI_API_KEY")
-
-# We create a 'Client', which is like our private secure phone line to Google's AI.
-# We give it our API key so it knows we are authorized to make requests.
-client = genai.Client(api_key=api_key)
 
 def test_gemini_connection():
     """
@@ -23,6 +16,10 @@ def test_gemini_connection():
     """
     print("Testing connection to Google Gemini...")
     
+    # Initialize the client specifically when this function runs!
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+
     # We use a try/except block. If something crashes (like an invalid API key), 
     # the code gracefully jumps down to 'except' instead of breaking our app entirely.
     try:
@@ -52,6 +49,9 @@ def simplify_text(text, target_level):
     """
     Sends a request to Gemini to rewrite the text to a specific CEFR level.
     """
+    # Initialize the client exactly when this function runs!
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
     # 1. We prepare exactly what we want to say to the AI.
     # The 'f' inside the quotation marks lets us inject our variables '{target_level}' and '{text}' directly into the string.
     prompt = f"""Rewrite the following text at {target_level} English level. Use simple words and short sentences.
