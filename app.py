@@ -9,6 +9,7 @@ from functools import wraps
 
 import json
 import textstat
+import traceback
 
 # Import the analysis function from our analyzer module
 from analyzer import analyze_text
@@ -252,6 +253,7 @@ def simplify_endpoint():
     except Exception as e:
         # If Gemini fails (API quota run out, network offline, etc.), we catch it here.
         print("Gemini API Error:", e)
+        print(traceback.format_exc())
         # We respond with a 503 Service Unavailable error instead of crashing our server!
         return jsonify({"error": "AI service unavailable", "code": 503}), 503
         
